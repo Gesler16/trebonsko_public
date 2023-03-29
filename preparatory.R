@@ -21,6 +21,7 @@ rownames4 <- paste(rownames1,rownames2,rownames3,sep = "_")
 colnames(species_rows) <- rownames4
 
 #converting categorical variables to factor
+birds2 <- birds
 birds2$year <- as.factor(birds2$year)
 birds2$month <- as.factor(birds2$month)
 birds2$pond <- as.factor(birds2$pond)
@@ -47,14 +48,8 @@ species <- as.character(colnames(species))
 species <- append(species, "ana_cly")
 
 # Combined selection
-birds3 <- select(birds2,c("pond","surface","year","month","act_hyp", "ana_cre", "ana_pla", "ana_que", 
-													"ana_str", "ans_ans", "ard_cin", "ayt_fer", "ayt_ful", "buc_cla","cha_dub", 
-													"cic_nig", "cir_aer", "cyg_olo", "cas_alb", "ful_atr", "gal_chl", "hal_alb",
-													"lar_cac","lar_rid","net_ruf", "nyc_nyc", "pha_car", "pod_cri", "pod_nig", 
-													"ste_hir", "tac_ruf", "tri_gla", "tri_och", "van_van","ana_cly"))
-
-
-
+sel1 <- c("pond","surface","year","month", species)
+birds3 <- select(birds2, any_of(sel1))
 
 ### Regression models for each census
 # Function for extracting density and occupancy per species, with option of additional thresholds 
@@ -157,11 +152,7 @@ do_mod_list <- list(DO_5_2005,DO_5_2006,DO_5_2007,DO_5_2008,DO_5_2009,DO_5_2010,
 
 
 
-# Traits dataframe
-traits <- read.csv("data/processed_data/species_traits.csv",header=TRUE)
-traits$waterbird <- as.factor(traits$waterbird)
-traits$eu_trend <- as.factor(traits$eu_trend)
-traits$migration <- as.factor(traits$migration)
+
 
 ### Merging datasets
 # Adding month and year as variables
@@ -170,8 +161,17 @@ full_df <- full_df[,2:6]
 full_df$den <- log(full_df$den+1)
 full_df$occ <- log(full_df$occ+1)
 
+write.csv(full_df,"data/processed_data/full_df.csv", row.names=F)
+
+# Traits dataframe
+traits <- read.csv("species_traits.csv",header=TRUE)
+traits$waterbird <- as.factor(traits$waterbird)
+traits$eu_trend <- as.factor(traits$eu_trend)
+traits$migration <- as.factor(traits$migration)
+
 
 # Merging with traits
+full_df <- read.csv("data/processed_data/full_df.csv",header=TRUE)
 merged_full <- merge(full_df,traits, by="spp")
 merged_full$mass <- log(merged_full$mass)
 merged_full$month <- as.factor(merged_full$month)
@@ -207,4 +207,4 @@ for(y in years){
 }
 com_spp_slope <- com_spp_slope[-1,]		
 
-write.csv(com_spp_slope,"data/processed_data/common_spp_slope_df.csv")
+write.csv(com_spp_slope,"data/processed_data/common_spp_slope_df.csv",, row.names=F)
