@@ -8,14 +8,6 @@ library(car)
 library(MuMIn)
 library(Hmisc)
 
-# Maybe need to load:
-library(lmerTest)
-library(tseries)
-library(lmtest)
-library(DescTools)
-library(cAIC4)
-library(AICcmodavg)
-
 
 ### Temporal model
 ## Importing dataframes
@@ -114,7 +106,7 @@ env_df <- cbind(temp_df,mean_tr,water_sd,nao,tempr)
 write.csv(env_df,"output/env_df.csv", row.names = F)
 
 #### Temporal model ####
-lm_ym <- lm(lm_slope~month+year,env_df)
+lm_ym <- lm(lm_slope~year+month,env_df)
 summary(lm_ym)
 anova(lm_ym)
 lm_df <- data.frame(lm_ym$coefficients)
@@ -130,7 +122,8 @@ env_df$tempr <- (env_df$tempr-mean(env_df$tempr))/sd(env_df$tempr)
 env_df$water_sd <- (env_df$water_sd-mean(env_df$water_sd))/sd(env_df$water_sd)
 
 ### Effect of environmental variables on DAR slope
-temp_mod <- lm(lm_slope~month+mean_tr*water_sd+month:water_sd+month:mean_tr+year+nao,env_df, na.action = "na.fail")
+temp_mod <- lm(lm_slope~month*tempr+mean_tr+mean_tr:tempr+mean_tr:month+year+nao,env_df, na.action = "na.fail")
+
 summary(temp_mod)
 anova(temp_mod)
 temp_mod$coefficients
@@ -166,7 +159,8 @@ dens_mods <- dens_mods[,-c(1:2)]
 
 part_df <- merge(merged_full,dens_mods,no.dups=F,by=c("month","year"))
 
-part_lm <- lm(lm_slope~log(den+1)*log(occ+1), part_df)
+part_lm <- lm(lm_slope~log(den+1)*log(occ+1), part_df[part_df$month==5,])
+part_lm <- lm(lm_slope~log(den+1)*log(occ+1), part_df[part_df$month==7,])
 summary(part_lm)
 par(mfrow=c(2,2))
 plot(part_lm)
@@ -205,6 +199,7 @@ abu_pond$total <- apply(abu_pond[5:54],1,sum)
 abu_pond$tot_dens <- abu_pond$total/abu_pond$surface
 abu_pond$pond <- as.factor(abu_pond$pond)
 abu_pond$year <- as.factor(abu_pond$year)
+
 
 lm4 <- lme(log(tot_dens+1)~log(transp),data=abu_pond[abu_pond$month==5,],random=~1|pond/year)
 summary(lm4)
@@ -330,7 +325,6 @@ summary(fullmod)
 ## Model selection
 # Full model dredging and averaging, getting SWs
 mod_sel <- dredge(fullmod, trace=2)
-avg <- model.avg(mod_sel)
 avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95)
 avg$sw
 confint(avg)
@@ -352,7 +346,6 @@ ggpubr::ggqqplot(resd)
 ## Model selection
 # Full model dredging and averaging, getting SWs
 mod_sel <- dredge(fullmod, trace=2)
-avg <- model.avg(mod_sel)
 avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95)
 avg$sw
 confint(avg)
@@ -447,6 +440,7 @@ summary(pond_mod)
 anova(pond_mod)
 
 # Water Transparency SD
+env_spp$w_sd <- log(env_spp$w_sd+1)
 pond_mod <- lme(w_sd~month,data=env_spp,random=~1|spp/year,na.action = "na.omit")
 summary(pond_mod)
 anova(pond_mod)
@@ -500,51 +494,6 @@ sum(abu_sum_comm$occ[abu_sum_comm$month==7])/26.75/12
 
 
 
-		
 
-#### Variation in mean total abundance and occupancy annually ####	
-
-pond_mod <- lm(abu~year,abund_sums[abund_sums$month==5,])
-pond_mod <- lm(abu~year,abund_sums[abund_sums$month==7,])
-pond_mod <- lme(abu~year,abund_sums[abund_sums$month==5,],random=~1|spp_no)
-pond_mod <- lme(abu~year,abund_sums[abund_sums$month==7,],random=~1|spp_no)
-pond_mod <- lme(abu~year,data=abund_sums,random=~1|month)
-
-
-pond_mod <- lm(occ~year,occ_sums[occ_sums$month==5,])
-pond_mod <- lm(occ~year,occ_sums[occ_sums$month==7,])
-pond_mod <- lme(occ~year,occ_sums[occ_sums$month==5,],random=~1|spp_no)
-pond_mod <- lme(occ~year,occ_sums[occ_sums$month==7,],random=~1|spp_no)
-pond_mod <- lme(occ~year,data=occ_sums,random=~1|month)
-
-
-
-
-summary(pond_mod)
-anova(pond_mod)
-
-
-#### Does the population of diving and dabbling ducks vary per year? #### 
-
-ducks <- c("net_ruf","ayt_fer","ayt_ful","ana_cly","ana_cre",
-					 "ana_pla","ana_que","ana_str")
-
-may_ducks <- abund_spp[abund_spp$month==5,]
-may_ducks <- filter(may_ducks,spp %in% ducks)
-pond_mod <- lme(log10(occ)~year,may_ducks,random=~1|spp)
-pond_mod <- lme(log10(abu)~year,may_ducks,random=~1|spp)
-
-july_ducks <- abund_spp[abund_spp$month==7,]
-july_ducks <- filter(july_ducks,spp %in% ducks)
-pond_mod <- lme(log10(occ)~year,july_ducks,random=~1|spp)
-pond_mod <- lme(log10(abu)~year,july_ducks,random=~1|spp)
-
-plot(pond_mod)
-resd <- resid(pond_mod)
-ggpubr::ggqqplot(resd)
-hist(resd, xlab = "Residuals", main = "")
-
-summary(pond_mod)
-anova(pond_mod)
 
 
