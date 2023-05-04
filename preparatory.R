@@ -70,7 +70,7 @@ fun.de.oc.df <- function(df,month,year,abu.thr=0, occ.thr=0){
 }
 
 # Making dataframes per month/year
-
+rsthemes::try_rsthemes("dark")
 years <- c(2005:2016)
 months <- c(5,7)
 
