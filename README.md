@@ -1,9 +1,6 @@
 # Github Repository Metadata
 
-Paper Title
-Authors
-
-
+This is the code and data for the manuscript titled "Temporal variation in habitat quality shapes the distribution-abundance relationship in waterbirds at the landscape scale".
 
 ### Instructions:
 - To replicate the analyses, open the .Rproj file in R studio.
