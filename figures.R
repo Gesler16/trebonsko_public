@@ -1,5 +1,6 @@
 # Loading packages
 library(ggplot2)
+library(ggsignif)
 
 # Figure 2
 slopes <- read.csv("data/processed_data/common_spp_slope_df.csv", header=T)
@@ -7,9 +8,9 @@ years_axis <- c(2005:2016)
 
 ggplot(slopes[slopes$month==5,],aes(year,slope))+
 	geom_point(size=1.5, color = "#9348D9")+
-	geom_smooth(method="lm",size=1, aes(color = "May"),se=FALSE)+
+	geom_smooth(method="lm",size=1, aes(color = "May"),weight = se,se=FALSE)+
 	geom_point(data=slopes[slopes$month==7,],size=1.5, color = "#03723B",shape=24)+
-	geom_smooth(data=slopes[slopes$month==7,],method="lm",size=1, aes(color = "July"),se=FALSE)+
+	geom_smooth(data=slopes[slopes$month==7,],method="lm",weight = se,size=1, aes(color = "July"),se=FALSE)+
 	labs(y = "Slope", x="Year")+
 	scale_color_manual(name="Month",breaks=c("May", "July"),values=c('May'='#9348D9', 'July'='#03723B'))+
 	theme_classic()+
@@ -21,7 +22,9 @@ ggplot(slopes[slopes$month==5,],aes(year,slope))+
 ggsave(filename = "output/figures/common_spp_slopes.jpeg",width = 1920, height = 1080, units = "px",
 			 dpi=320,bg = "white")
 
-
+# R^2 values of DAR slopes in figure
+summary(lm(slope~year, com_spp_slope[com_spp_slope$month==5,])) #May
+summary(lm(slope~year, com_spp_slope[com_spp_slope$month==7,])) #July
 
 # Figure 3
 # Ponds vector
@@ -44,13 +47,11 @@ for(p in ponds){
 ponds_wt <- ponds_wt[-1,]
 
 # Figure code
-# pond_data <- water_df[,-c(2:4)]
-# ponds_cv <- merge(ponds_cv,pond_data,by.x ="pond")
-# ponds_cv <- ponds_cv[!duplicated(ponds_cv), ]
 ponds_wt$month <- as.factor(ponds_wt$month)
 monthlabs <- c("May", "July")
 ggplot(ponds_wt, aes(x = month, y = mean, fill = month)) + 
 	stat_boxplot(geom ='errorbar',width=0.5)+geom_boxplot()+
+	geom_signif(comparisons = list(c("5","7")),map_signif_level = T)+
 	theme_classic()+ scale_fill_manual(values=c("#9348D9","#03723B"))+
 	theme_classic()+labs(y = "Fishpond Trasparency (cm)", x="Month")+ scale_x_discrete(labels= monthlabs)+
 	theme(legend.position="none",plot.title=element_text(hjust=0.5, size=14), 
@@ -60,12 +61,12 @@ ggplot(ponds_wt, aes(x = month, y = mean, fill = month)) +
 ggsave(filename = "output/figures/water_month.jpeg", width = 1920, height = 1080, units = "px",
 			 dpi=320,bg = "white")
 
-
-
+# Statistical values for boxplot
+t.test(ponds_wt[ponds_wt$month==5,3],ponds_wt[ponds_wt$month==7,3],paired=T)
 
 ## Figure 5
 #### Species moving around the interspecific DAR in different years/months ####
-## 2005 ad 2016 chosen as the first and last years of the dataset
+## 2005 and 2016 chosen as the first and last years of the dataset
 # May
 pdata <- merge(DO_5_2005[,-4],DO_5_2016[,-4],by=c("spp","year","den","occ"), all=T)
 pdata$den <- log(pdata$den+1)
@@ -84,6 +85,10 @@ ggplot(pdata,aes(x=occ,y=den))+
 
 ggsave(filename = "output/figures/may_comp.jpeg",width = 1920, height = 1080, units = "px",
 			 dpi=320,bg = "white")
+
+# R^2 values of DAR slopes in figure
+summary(lm(den~occ, pdata[pdata$year==2005,])) #2005
+summary(lm(den~occ, pdata[pdata$year==2016,])) #2016
 
 ## July
 pdata <- merge(DO_7_2005[,-4],DO_7_2016[,-4],by=c("spp","year","den","occ"), all=T)
@@ -104,3 +109,9 @@ ggplot(pdata,aes(x=occ,y=den))+
 
 ggsave(filename = "output/figures/july_comp.jpeg",width = 1920, height = 1080, units = "px",
 			 dpi=320,bg = "white")
+
+# R^2 values of DAR slopes in figure
+summary(lm(den~occ, pdata[pdata$year==2005,])) #2005
+summary(lm(den~occ, pdata[pdata$year==2016,])) #2016
+
+

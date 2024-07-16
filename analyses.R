@@ -22,7 +22,7 @@ merged_full$mass <- log(merged_full$mass)
 merged_full$month <- as.factor(merged_full$month)
 merged_full$year <- as.factor(merged_full$year)
 
-# Only ponds measured in both months
+# Keeping only ponds measured in both months
 surf_df <- data.frame(birds$pond,birds$surface)
 colnames(surf_df) <- c("pond","surf")
 surf_df <- surf_df[!duplicated(surf_df), ]
@@ -33,7 +33,7 @@ water_df2 <- merge(water_df,surf_df, by ="pond" )
 season_sd <- data.frame(year=1,month=2,sd=3, pond_no=1, med_sa=1, mean_sa=1)
 
 month1 <- c(5,7)
-years <- year1
+years <- c(2005:2016)
 
 for (y in years){
 	subs_sd <- subset(water_df2, year==y)
@@ -48,23 +48,22 @@ for (y in years){
 	} 
 }
 
-
 season_sd <- season_sd[-1,]
 sd_all <- season_sd
+
 
 ## Creating full dataset for temporal model
 # Only species in both months
 slope_df <- read.csv("data/processed_data/common_spp_slope_df.csv",header=TRUE)
 temp_df <- slope_df
-temp_df <- temp_df[,1:3]
-colnames(temp_df) <- c("year","month","lm_slope")
+temp_df <- temp_df[,-4]
+colnames(temp_df) <- c("year","month","lm_slope", "se")
 temp_df <- arrange(temp_df,month,year)
 temp_df$year <- as.factor(temp_df$year)
 temp_df$month <- as.factor(temp_df$month)
 
 ## Adding mean water transparency per year
 mean_tr <- data.frame(month=1,year=1,transp=1)
- 
 year1 <- c(2005:2016)
 month1 <- c(5,7)
 
@@ -80,9 +79,7 @@ for(y in year1){
 	}
 }
 mean_tr <- mean_tr[-1,]
-
 mean_tr <- arrange(mean_tr,month,year)
-
 mean_tr <- mean_tr[,3]
 
 #### Adding water transparency SD per year ####
@@ -105,8 +102,8 @@ tempr <- tempr[,3]
 env_df <- cbind(temp_df,mean_tr,water_sd,nao,tempr)
 write.csv(env_df,"output/env_df.csv", row.names = F)
 
-#### Temporal model ####
-lm_ym <- lm(lm_slope~year+month,env_df)
+#### Temporal weighted regression model ####
+lm_ym <- lm(lm_slope~year+month,weight = se, env_df)
 summary(lm_ym)
 anova(lm_ym)
 lm_df <- data.frame(lm_ym$coefficients)
@@ -122,34 +119,31 @@ env_df$tempr <- (env_df$tempr-mean(env_df$tempr))/sd(env_df$tempr)
 env_df$water_sd <- (env_df$water_sd-mean(env_df$water_sd))/sd(env_df$water_sd)
 
 ### Effect of environmental variables on DAR slope
-temp_mod <- lm(lm_slope~month*tempr+mean_tr+mean_tr:tempr+mean_tr:month+year+nao,env_df, na.action = "na.fail")
+temp_mod <- lm(lm_slope~month*tempr+mean_tr+mean_tr:tempr+mean_tr:month+year+nao,
+							 weight=se, env_df, na.action = "na.fail")
 
-summary(temp_mod)
-anova(temp_mod)
-temp_mod$coefficients
+# summary(temp_mod)
+# anova(temp_mod)
+# temp_mod$coefficients
 
-# Checking for multicolinearity, normality, heteroscedacity
-vif(temp_mod) 
+# Checking for normality and heteroscedacity
 plot(temp_mod$residuals)
 acf(temp_mod$residuals)
 resd <- resid(temp_mod)
 ggpubr::ggqqplot(resd)
 hist(resd, xlab = "Residuals", main = "")
 
-
 par(mfrow=c(2,2))
 plot(temp_mod)
 
-# Running model comparison
-temp_all <- dredge(temp_mod)
-temp_all
-avg <- model.avg(temp_all,subset=cumsum(weight) <= .95)
-avg$sw
-confint(avg)
+# Running model comparison (see Methods section for details)
+temp_all <- dredge(temp_mod, beta="partial.sd")
+avg <- model.avg(temp_all,subset=cumsum(weight) <= .95, beta="partial.sd")
 summary(avg)
+confint(avg)
 
-### Partitioning variation between density and occupancy
-
+### Partitioning variation between density and occupancy by regressing the 
+# slope against its components, weighted by the slope's standard error
 year <- c(2005:2016,2005:2016)
 month <- c(rep(5,times=12),rep(7,times=12))
 dens_mods <- read.csv("data/processed_data/dens_mods.csv", header=T)
@@ -159,8 +153,17 @@ dens_mods <- dens_mods[,-c(1:2)]
 
 part_df <- merge(merged_full,dens_mods,no.dups=F,by=c("month","year"))
 
-part_lm <- lm(lm_slope~log(den+1)*log(occ+1), part_df[part_df$month==5,])
-part_lm <- lm(lm_slope~log(den+1)*log(occ+1), part_df[part_df$month==7,])
+# May
+part_lm <- lm(lm_slope~log(den+1)*log(occ+1), weight=se, part_df[part_df$month==5,])
+summary(part_lm)
+par(mfrow=c(2,2))
+plot(part_lm)
+dev.off()
+resd <- resid(part_lm)
+ggpubr::ggqqplot(resd)
+
+# July
+part_lm <- lm(lm_slope~log(den+1)*log(occ+1), weight=se, part_df[part_df$month==7,])
 summary(part_lm)
 par(mfrow=c(2,2))
 plot(part_lm)
@@ -190,8 +193,6 @@ water_df3$month <- as.factor(water_df3$month)
 water_df3$year <- as.factor(water_df3$year)
 watermod <- lm(transp~month*year+surf,water_df2)
 summary(watermod)
-anova(watermod)
-
 
 ## Bird density against pond water transparency
 abu_pond <- merge(birds,water_df3, by=c("pond","year","month"))
@@ -200,59 +201,53 @@ abu_pond$tot_dens <- abu_pond$total/abu_pond$surface
 abu_pond$pond <- as.factor(abu_pond$pond)
 abu_pond$year <- as.factor(abu_pond$year)
 
-
+# May
 lm4 <- lme(log(tot_dens+1)~log(transp),data=abu_pond[abu_pond$month==5,],random=~1|pond/year)
 summary(lm4)
-anova(lm4)
 
+# July
 lm4 <- lme(log(tot_dens+1)~log(transp),data=abu_pond[abu_pond$month==7,],random=~1|pond/year)
 summary(lm4)
-anova(lm4)
-
 
 # Bird density against pond surface area
+# May
 lm4 <- lme(log(tot_dens+1)~log(surface),data=abu_pond[abu_pond$month==5,],random=~1|pond/year)
 summary(lm4)
-anova(lm4)
 
+# July
 lm4 <- lme(log(tot_dens+1)~log(surface),data=abu_pond[abu_pond$month==7,],random=~1|pond/year)
 summary(lm4)
-anova(lm4)
 
-
-
-
-#### PGLS ####
-## Preparing dataset for PGLS
-### Dataframe for models using slope instead of density or occupancy as response variable
-
+#### Interpsecific trait model ####
+## Preparing dataset
 com_spp <- c(unique(merged_full$spp))
 months <- c(5,7)
 
-slope_df <- data.frame(spp="first",month=1,slope=1)
+slope_df <- data.frame(spp="first",month=1,slope=1, se=1)
 
 for (i in com_spp){
 	subset1 <- merged_full[merged_full$spp==i,]
 	for (j in months){
 		subset2 <- subset1[subset1$month==j,]
 		slope1 <- summary(lm(occ~den,subset2))
-		slope <- slope1$coefficients[2]
-		vec1 <- c(i,j,slope)
+		slope <- slope1$coefficients[2,1]
+		se <- slope1$coefficients[2,2]
+		vec1 <- c(i,j,slope, se)
 		slope_df <- rbind(slope_df,vec1)
 	} 
 }
 slope_df <- slope_df[-1,]
+slope_df[c(4,58),4] <- 0.00000001 # Removing NA SEs
 
 write.csv(slope_df,"data/processed_data/slope_df.csv",row.names=FALSE)
 
-
 # Merging new slope df with traits
+slope_df <- read.csv("data/processed_data/slope_df.csv",header = T)
 slope_full <- merge(slope_df,traits, by="spp")
 slope_full$mass <- log(slope_full$mass)
-slope_full$slope <- as.numeric(slope_full$slope)
 slope_full$month <- as.factor(slope_full$month)
+slope_full$se <- as.numeric(slope_full$se)
 slope_full$phylo <- slope_full$spp
-
 slope_full <- slope_full[-c(39:40),] # Removing outlier spp (Larus cachinnans; see main text)
 
 
@@ -263,13 +258,13 @@ slope_full$latitude <- (slope_full$latitude-mean(slope_full$latitude))/sd(slope_
 slope_full$hssi <- (slope_full$hssi-mean(slope_full$hssi))/sd(slope_full$hssi)
 slope_full$dssi <- (slope_full$dssi-mean(slope_full$dssi))/sd(slope_full$dssi)
 
-## Phylogenetic correction 
+
+## Preparing matrix for phylogenetic correction 
 # Preparing final tree
 trees <- read.nexus("output.nex")
 cons_tree <- ls.consensus(trees)
 
 # Rename in consensus tree to acronyms and match them to dataset
-
 acro_spp <- c("cyg_olo","ans_ans","buc_cla","tad_tad","ayt_fer","ayt_ful","ayt_mar","ayt_nyr","net_ruf",
 							"ana_pla","ana_cre","ana_str","ana_cly","ana_que","ard_cin","cas_alb","nyc_nyc","cic_nig",
 							"cic_cic","pha_car","gal_gal","tri_och","tri_ery","tri_tot","tri_gla","act_hyp","phi_pug",
@@ -282,77 +277,47 @@ for(i in 1:length(acro_spp)){
 	cons_tree$tip.label[i] <- acro_spp[i]
 }
 
-dataset_sp <- unique(merged_full$spp)
+dataset_sp <- unique(slope_full$spp)
 
 # Pruning tree
 missing <- name.check(cons_tree, slope_full,slope_full$spp)
 to_drop <- missing$tree_not_data 
 
-missing <- name.check(cons_tree, merged_full,merged_full$spp)
-to_drop <- missing$tree_not_data 
-
-
 for (i in 1:length(to_drop)){
 	cons_tree <- drop.tip(cons_tree,to_drop[i])
 }
 
-
 # Make brownian correlation matrix
 bm.mat <- corBrownian(1,phy=cons_tree,form=~phylo)
 
-
 # adding phylo column
 slope_full$phylo <- slope_full$spp
-merged_full$phylo <- merged_full$spp
 
 
-
-## May PGLS Model
+### Running models
+## May PGLS model
 slope_may <- slope_full[slope_full$month==5,]
-fullmod <-gls(slope~diet+hssi+dssi+eu_trend+latitude+mass+breeding+migration,correlation=bm.mat,
-							data=slope_may,na.action="na.fail",control = list(singular.ok = TRUE))
+vf1 <- varFixed(~se)
+fullmod <-with(slope_may,gls(slope~diet+hssi+dssi+eu_trend+latitude+mass+breeding+migration,correlation=bm.mat,
+							data=slope_may,na.action="na.fail",weights=vf1,control = list(singular.ok = TRUE)))
 
-# Checking for multicolinearity, normality, heteroscedacity
-plot(fullmod)
-vif(fullmod, type="predictor")
-plot(fullmod$residuals)
-acf(fullmod$residuals)
-resd <- resid(fullmod)
-ggpubr::ggqqplot(resd)
-
-summary(fullmod)
-
-## Model selection
-# Full model dredging and averaging, getting SWs
-mod_sel <- dredge(fullmod, trace=2)
-avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95)
-avg$sw
-confint(avg)
+# Model averaging
+mod_sel <- dredge(fullmod, trace = 2)
+avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95, beta="partial.sd")
 summary(avg)
+confint(avg)
 
-## July PGLS Model
+## July PGLS model
 slope_july <- slope_full[slope_full$month==7,]
-fullmod <-gls(slope~diet+hssi+dssi+eu_trend+latitude+mass+breeding+migration,correlation=bm.mat,
-							data=slope_july,na.action="na.fail",control = list(singular.ok = TRUE))
+vf2 <- varFixed(~se)
+fullmod <-with(slope_july,gls(slope~diet+hssi+dssi+eu_trend+latitude+mass+breeding+migration,correlation=bm.mat,
+														 data=slope_july,na.action="na.fail",weights=vf2,control = list(singular.ok = TRUE)))
 
-# Checking for multicolinearity, normality, heteroscedacity
-plot(fullmod)
-vif(fullmod)
-plot(fullmod$residuals)
-acf(fullmod$residuals)
-resd <- resid(fullmod)
-ggpubr::ggqqplot(resd)
-
-## Model selection
-# Full model dredging and averaging, getting SWs
-mod_sel <- dredge(fullmod, trace=2)
-avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95)
-avg$sw
-confint(avg)
+# Model averaging
+mod_sel <- dredge(fullmod, trace = 2)
+avg <- model.avg(mod_sel,subset=cumsum(weight) <= .95, beta="partial.sd")
 summary(avg)
-
-
-
+confint(avg)
 
 ## All variables per spp per sampling period
 # Code
@@ -450,6 +415,8 @@ resd <- resid(pond_mod)
 ggpubr::ggqqplot(resd)
 hist(resd, xlab = "Residuals", main = "")
 
+## Additional statistics
+abund_spp <- abund_full
 
 ####Does the abundance of diff spp vary between years to a different extent?####
 may_abund <- abund_spp[abund_spp$month==5,]
@@ -478,17 +445,17 @@ sum(abu_sum_comm$abu[abu_sum_comm$month==7])/12
 
 ## Occupancy
 # All spp
-nrow(abund_spp[abund_spp$month==5,])/12 # 31.5
-sum(abund_spp$occ[abund_spp$month==5])/31.5/12
-nrow(abund_spp[abund_spp$month==7,])/12 # 28.75
-sum(abund_spp$occ[abund_spp$month==7])/28.75/12
+nrow(abund_spp[abund_spp$month==5,])/12 # 30.33333
+sum(abund_spp$occ[abund_spp$month==5])/30.33333/12
+nrow(abund_spp[abund_spp$month==7,])/12 # 28.91667
+sum(abund_spp$occ[abund_spp$month==7])/28.91667/12
 
 # Only analysed
 abu_sum_comm <- merge(abund_spp,common_spp,by=c("spp", "year"))
-nrow(abu_sum_comm[abu_sum_comm$month==5,])/12 # 26.75
+nrow(abu_sum_comm[abu_sum_comm$month==5,])/12 # 23.16667
 sum(abu_sum_comm$occ[abu_sum_comm$month==5])/26.75/12
-nrow(abu_sum_comm[abu_sum_comm$month==7,])/12 # 26.75
-sum(abu_sum_comm$occ[abu_sum_comm$month==7])/26.75/12
+nrow(abu_sum_comm[abu_sum_comm$month==7,])/12 # 23.75
+sum(abu_sum_comm$occ[abu_sum_comm$month==7])/23.75/12
 
 
 

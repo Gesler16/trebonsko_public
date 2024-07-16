@@ -20,7 +20,7 @@ rownames3 <- as.character(birds$pond)
 rownames4 <- paste(rownames1,rownames2,rownames3,sep = "_")
 colnames(species_rows) <- rownames4
 
-#converting categorical variables to factor
+#converting categorical variables to factors
 birds2 <- birds
 birds2$year <- as.factor(birds2$year)
 birds2$month <- as.factor(birds2$month)
@@ -43,8 +43,7 @@ species <- birds3
 species <- species[5:ncol(species)]
 species <- as.character(colnames(species))
 
-# Adding the spp that will be retained as its sampling is highly accurate (Anas clypaeta)
-
+# Adding the rare spp that will be retained as its sampling is highly accurate (Anas clypaeta)
 species <- append(species, "ana_cly")
 
 # Combined selection
@@ -52,6 +51,53 @@ sel1 <- c("pond","surface","year","month", species)
 birds3 <- select(birds2, any_of(sel1))
 
 ### Regression models for each census
+### Abundance datasets
+
+
+# Function for extracting abundance and occupancy per species based on specific threshold
+# Thresholds here is to limit abundance/occupancy *per subset*
+fun.ab.oc.df <- function(df,month,year,abu.thr=0, occ.thr=0){
+	df1 <- df[df$month==month,]
+	df1 <- df1[df1$year==year,]
+	birds_abu <- select(df1,-c("pond","surface","year","month"))
+	birds_abu <- birds_abu[colSums(birds_abu)>abu.thr]
+	mean_abundance <- colSums(birds_abu)/colSums(birds_abu!=0)
+	occupancy <- colSums(birds_abu!=0)
+	ab_oc <- data.frame(colnames(birds_abu))
+	ab_oc <- cbind(ab_oc,mean_abundance,occupancy)
+	colnames(ab_oc) <- c("species","abu","occ")
+	rownames(ab_oc) <- rownames(NULL)
+	ab_oc <- ab_oc[ab_oc$occ>occ.thr,]
+}
+
+
+
+# Making dataframes per month/year
+
+years <- c(2005:2016)
+months <- c(5,7)
+
+for(y in years){
+	for(m in months){
+		df1 <- fun.ab.oc.df(birds3,m,y)
+		df1 <- cbind(df1,m,y)
+		colnames(df1) <- c("spp","abu","occ","month","year")
+		assign(paste0("AO_",m,"_",y),df1)
+	}
+}
+
+# Model list and names
+
+ao_mod_names <- c("AO_5_2005","AO_5_2006","AO_5_2007","AO_5_2008","AO_5_2009","AO_5_2010",
+									"AO_5_2011","AO_5_2012","AO_5_2013","AO_5_2014","AO_5_2015","AO_5_2016",
+									"AO_7_2005","AO_7_2006","AO_7_2007","AO_7_2008","AO_7_2009","AO_7_2010",
+									"AO_7_2011","AO_7_2012","AO_7_2013","AO_7_2014","AO_7_2015","AO_7_2016")
+
+ao_mod_list <- list(AO_5_2005,AO_5_2006,AO_5_2007,AO_5_2008,AO_5_2009,AO_5_2010,AO_5_2011,AO_5_2012,
+										AO_5_2013,AO_5_2014,AO_5_2015,AO_5_2016,AO_7_2005,AO_7_2006,AO_7_2007,AO_7_2008,
+										AO_7_2009,AO_7_2010,AO_7_2011,AO_7_2012,AO_7_2013,AO_7_2014,AO_7_2015,AO_7_2016)
+
+
 # Function for extracting density and occupancy per species, with option of additional thresholds 
 
 fun.de.oc.df <- function(df,month,year,abu.thr=0, occ.thr=0){
@@ -70,7 +116,6 @@ fun.de.oc.df <- function(df,month,year,abu.thr=0, occ.thr=0){
 }
 
 # Making dataframes per month/year
-rsthemes::try_rsthemes("dark")
 years <- c(2005:2016)
 months <- c(5,7)
 
@@ -95,14 +140,14 @@ do_mod_list <- list(DO_5_2005,DO_5_2006,DO_5_2007,DO_5_2008,DO_5_2009,DO_5_2010,
 
 
 # Relationship regression statistics and testing for normality
-norm_df <- data.frame( n_spp=1,slope=1,adj_r_rq = 1, p_value = 1,shap.pv = 1) 
-for(i in do_mod_list){									#change list
+norm_df <- data.frame( n_spp=1,slope=1,adj_r_rq = 1, p_value = 1,shap.pv = 1, se = 1) 
+for(i in do_mod_list){
 	df <- i
-	df$den <- log(df$den+1)		#change variable
+	df$den <- log(df$den+1)
 	df$occ <- log(df$occ+1)
-	df$den <- (df$den-mean(df$den))/sd(df$den)		#change variable
+	df$den <- (df$den-mean(df$den))/sd(df$den)
 	df$occ <- (df$occ-mean(df$occ))/sd(df$occ)
-	lm1 <- lm(occ~den,df)		#change variable
+	lm1 <- lm(occ~den,df)
 	slope <- lm1$coefficients[2]
 	stat.coef  <- summary(lm1)$coefficients
 	p_val <- stat.coef[2,4]
@@ -110,13 +155,14 @@ for(i in do_mod_list){									#change list
 	shap <- shapiro.test(lm1$residuals)
 	pv <- shap$p.value
 	n_spp <- nrow(i)
-	list1 <- list(n_spp,slope,r_sqr,p_val,pv)
+	se <- summary(lm1)$coefficients[2,2]
+	list1 <- list(n_spp,slope,r_sqr,p_val,pv,se)
 	norm_df[nrow(norm_df)+1,] <- list1
 }
 
 norm_df <- data.frame(norm_df[-1,])
 norm_df <- cbind(do_mod_names,norm_df) #change names
-colnames(norm_df) <- c("Model","n_spp","lm_slope","adj_r_sq","p_value","shapiro_pv")
+colnames(norm_df) <- c("Model","n_spp","lm_slope","adj_r_sq","p_value","shapiro_pv", "se")
 
 
 # Exporting
@@ -127,11 +173,8 @@ for (i in 1:length(do_mod_names)){
 						 row.names=FALSE)
 }
 
-
-
 ### Preparing full dataset
 ## Importing data
-
 # Relationship dataframes
 do_mod_names <- c("DO_5_2005","DO_5_2006","DO_5_2007","DO_5_2008","DO_5_2009","DO_5_2010",
 									"DO_5_2011","DO_5_2012","DO_5_2013","DO_5_2014","DO_5_2015","DO_5_2016",
@@ -149,9 +192,6 @@ for(i in 1:length(do_mod_names)) {
 do_mod_list <- list(DO_5_2005,DO_5_2006,DO_5_2007,DO_5_2008,DO_5_2009,DO_5_2010,DO_5_2011,DO_5_2012,
 										DO_5_2013,DO_5_2014,DO_5_2015,DO_5_2016,DO_7_2005,DO_7_2006,DO_7_2007,DO_7_2008,
 										DO_7_2009,DO_7_2010,DO_7_2011,DO_7_2012,DO_7_2013,DO_7_2014,DO_7_2015,DO_7_2016)
-
-
-
 
 
 ### Merging datasets
@@ -185,8 +225,9 @@ merged_full$latitude <- (merged_full$latitude-mean(merged_full$latitude))/sd(mer
 merged_full$hssi <- (merged_full$hssi-mean(merged_full$hssi))/sd(merged_full$hssi)
 merged_full$dssi <- (merged_full$dssi-mean(merged_full$dssi))/sd(merged_full$dssi)
 
-# Species found in both may and july (common spp) 
-com_spp_slope <- data.frame(year=1,month=1,slope=1, rsq = 1)
+# Generating interspecific DAR slopes for species found in both may and july 
+# (common spp) 
+com_spp_slope <- data.frame(year=1,month=1,slope=1, rsq = 1, se = 1)
 years <- c(2005:2016)
 months <- c(5,7)
 
@@ -201,10 +242,20 @@ for(y in years){
 		mod <- lm(occ~den,subset2)
 		slope <- as.numeric(mod$coefficients[2])
 		rsq <- summary(mod)$adj.r.squared
-		vec <- c(y,m,slope, rsq)
+		se <- summary(mod)$coefficients[2,2]
+		vec <- c(y,m,slope, rsq,se)
 		com_spp_slope <-rbind(com_spp_slope,vec)
 	}
 }
 com_spp_slope <- com_spp_slope[-1,]		
 
-write.csv(com_spp_slope,"data/processed_data/common_spp_slope_df.csv",, row.names=F)
+write.csv(com_spp_slope,"data/processed_data/common_spp_slope_df.csv", row.names=F)
+
+
+## Species/bird totals per month for each year
+# Abundance dataframe
+abund_full <- bind_rows(ao_mod_list, .id = "column_label")
+abund_full <- abund_full[,2:6]
+abund_full$abu <- abund_full$abu*abund_full$occ
+
+
